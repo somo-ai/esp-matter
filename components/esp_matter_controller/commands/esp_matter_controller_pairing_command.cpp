@@ -14,11 +14,13 @@
 
 #include <esp_check.h>
 #include <esp_log.h>
+#include <esp_timer.h>
 #include <esp_matter_controller_client.h>
 #include <esp_matter_controller_pairing_command.h>
 #include <optional>
 
 #include <app-common/zap-generated/cluster-enums.h>
+#include <controller/CommissioningDelegate.h>
 #include <credentials/FabricTable.h>
 
 static const char *TAG = "pairing_command";
@@ -31,10 +33,13 @@ namespace controller {
 
 void pairing_command::OnPairingComplete(CHIP_ERROR err)
 {
+    int64_t elapsed_ms = (esp_timer_get_time() - m_commissioning_start_us) / 1000;
     if (err == CHIP_NO_ERROR) {
-        ESP_LOGI(TAG, "PASE session establishment success");
+        ESP_LOGW(TAG, "[%3u.%03us] PASE session establishment success",
+                 (unsigned)(elapsed_ms / 1000), (unsigned)(elapsed_ms % 1000));
     } else {
-        ESP_LOGI(TAG, "PASE session establishment failure: Matter-%s", ErrorStr(err));
+        ESP_LOGE(TAG, "[%3u.%03us] PASE session establishment failure: %s",
+                 (unsigned)(elapsed_ms / 1000), (unsigned)(elapsed_ms % 1000), ErrorStr(err));
         auto &controller_instance = esp_matter::controller::matter_controller_client::get_instance();
         controller_instance.get_commissioner()->RegisterPairingDelegate(nullptr);
     }
@@ -45,8 +50,13 @@ void pairing_command::OnPairingComplete(CHIP_ERROR err)
 
 void pairing_command::OnCommissioningSuccess(chip::PeerId peerId)
 {
-    ESP_LOGI(TAG, "Commissioning success with node %" PRIX64 "-%" PRIX64, peerId.GetCompressedFabricId(),
-             peerId.GetNodeId());
+    int64_t elapsed_ms = (esp_timer_get_time() - m_commissioning_start_us) / 1000;
+    ESP_LOGW(TAG, "========================================");
+    ESP_LOGW(TAG, "COMMISSIONING SUCCESS — node %" PRIX64 "-%" PRIu64,
+             peerId.GetCompressedFabricId(), peerId.GetNodeId());
+    ESP_LOGW(TAG, "Total time: %u.%03us | Stages completed: %u",
+             (unsigned)(elapsed_ms / 1000), (unsigned)(elapsed_ms % 1000), m_stage_count);
+    ESP_LOGW(TAG, "========================================");
     auto &controller_instance = esp_matter::controller::matter_controller_client::get_instance();
     controller_instance.get_commissioner()->RegisterPairingDelegate(nullptr);
     if (m_callbacks.commissioning_success_callback) {
@@ -60,8 +70,15 @@ void pairing_command::OnCommissioningFailure(
     chip::PeerId peerId, CHIP_ERROR error, chip::Controller::CommissioningStage stageFailed,
     chip::Optional<chip::Credentials::AttestationVerificationResult> additionalErrorInfo)
 {
-    ESP_LOGI(TAG, "Commissioning failure with node %" PRIX64 "-%" PRIX64, peerId.GetCompressedFabricId(),
-             peerId.GetNodeId());
+    int64_t elapsed_ms = (esp_timer_get_time() - m_commissioning_start_us) / 1000;
+    ESP_LOGE(TAG, "========================================");
+    ESP_LOGE(TAG, "COMMISSIONING FAILED — node %" PRIX64 "-%" PRIu64,
+             peerId.GetCompressedFabricId(), peerId.GetNodeId());
+    ESP_LOGE(TAG, "Failed at stage: '%s' | Error: %s",
+             StageToString(stageFailed), ErrorStr(error));
+    ESP_LOGE(TAG, "Total time: %u.%03us | Stages completed: %u",
+             (unsigned)(elapsed_ms / 1000), (unsigned)(elapsed_ms % 1000), m_stage_count);
+    ESP_LOGE(TAG, "========================================");
     auto &controller_instance = esp_matter::controller::matter_controller_client::get_instance();
     controller_instance.get_commissioner()->RegisterPairingDelegate(nullptr);
     if (m_callbacks.commissioning_failure_callback) {
@@ -74,6 +91,21 @@ void pairing_command::OnCommissioningFailure(
     if (m_device_is_icd) {
         controller_instance.get_icd_client_storage().DeleteEntry(
             ScopedNodeId(peerId.GetNodeId(), controller_instance.get_fabric_index()));
+    }
+}
+
+void pairing_command::OnCommissioningStatusUpdate(chip::PeerId peerId, CommissioningStage stageCompleted, CHIP_ERROR error)
+{
+    m_stage_count++;
+    int64_t elapsed_ms = (esp_timer_get_time() - m_commissioning_start_us) / 1000;
+    if (error == CHIP_NO_ERROR) {
+        ESP_LOGW(TAG, "[%3u.%03us] Stage %2u complete: '%s'",
+                 (unsigned)(elapsed_ms / 1000), (unsigned)(elapsed_ms % 1000),
+                 m_stage_count, StageToString(stageCompleted));
+    } else {
+        ESP_LOGE(TAG, "[%3u.%03us] Stage %2u FAILED: '%s' error: %s",
+                 (unsigned)(elapsed_ms / 1000), (unsigned)(elapsed_ms % 1000),
+                 m_stage_count, StageToString(stageCompleted), ErrorStr(error));
     }
 }
 
@@ -174,6 +206,13 @@ esp_err_t pairing_command::pairing_ble_thread(NodeId node_id, uint32_t pincode, 
 {
     RendezvousParameters params = RendezvousParameters().SetSetupPINCode(pincode).SetDiscriminator(disc).SetPeerAddress(
         Transport::PeerAddress::BLE());
+
+    pairing_command::get_instance().m_commissioning_start_us = esp_timer_get_time();
+    pairing_command::get_instance().m_stage_count = 0;
+
+    ESP_LOGW(TAG, "pairing_ble_thread: node=%" PRIu64 " pin=%" PRIu32 " disc=%u hasDisc=%d",
+             node_id, pincode, disc, params.HasDiscriminator());
+
     auto &controller_instance = esp_matter::controller::matter_controller_client::get_instance();
     ESP_RETURN_ON_FALSE(controller_instance.get_commissioner()->GetPairingDelegate() == nullptr, ESP_ERR_INVALID_STATE,
                         TAG, "There is already a pairing process");
@@ -189,7 +228,9 @@ esp_err_t pairing_command::pairing_ble_thread(NodeId node_id, uint32_t pincode, 
             .SetICDMonitoredSubject(commissioner_node_id)
             .SetICDSymmetricKey(pairing_command::get_instance().m_icd_symmetric_key);
     }
-    controller_instance.get_commissioner()->PairDevice(node_id, params, commissioning_params);
+    CHIP_ERROR err = controller_instance.get_commissioner()->PairDevice(node_id, params, commissioning_params);
+    ESP_LOGW(TAG, "PairDevice returned: 0x%08" PRIX32 " (%s)",
+             err.AsInteger(), err == CHIP_NO_ERROR ? "OK" : "FAILED");
     return ESP_OK;
 }
 #endif

@@ -54,6 +54,8 @@ public:
     void OnCommissioningFailure(
         chip::PeerId peerId, CHIP_ERROR error, chip::Controller::CommissioningStage stageFailed,
         chip::Optional<chip::Credentials::AttestationVerificationResult> additionalErrorInfo) override;
+    void OnCommissioningStatusUpdate(chip::PeerId peerId, chip::Controller::CommissioningStage stageCompleted,
+                                     CHIP_ERROR error) override;
     void OnICDRegistrationComplete(chip::ScopedNodeId deviceId, uint32_t icdCounter) override;
     void OnICDStayActiveComplete(chip::ScopedNodeId deviceId, uint32_t promisedActiveDuration) override;
 
@@ -186,6 +188,8 @@ private:
     uint8_t m_icd_symmetric_key_buf[chip::Crypto::kAES_CCM128_Key_Length];
     chip::ByteSpan m_icd_symmetric_key;
     bool m_device_is_icd;
+    int64_t m_commissioning_start_us;
+    uint8_t m_stage_count;
 
     pairing_command()
         : m_remote_node_id(0)
@@ -194,6 +198,8 @@ private:
         , m_callbacks{nullptr, nullptr, nullptr}
         , m_icd_registration(true)
         , m_icd_registration_strategy(chip::Controller::ICDRegistrationStrategy::kBeforeComplete)
+        , m_commissioning_start_us(0)
+        , m_stage_count(0)
     {
         chip::Crypto::DRBG_get_bytes(m_icd_symmetric_key_buf, sizeof(m_icd_symmetric_key));
         m_icd_symmetric_key = chip::ByteSpan(m_icd_symmetric_key_buf);

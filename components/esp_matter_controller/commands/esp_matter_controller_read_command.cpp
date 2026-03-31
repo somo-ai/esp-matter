@@ -97,6 +97,210 @@ void read_command::OnAttributeData(const chip::app::ConcreteDataAttributePath &p
         ESP_LOGE(TAG, "Response Failure: No Data");
         return;
     }
+
+    // Log the raw attribute value at WARN level so it's visible even with
+    // CONFIG_CHIP_LOG_DEFAULT_LEVEL_ERROR (DataModelLogger uses ChipLogProgress
+    // which is suppressed).
+    {
+        // Cluster name lookup for common Matter clusters
+        auto cluster_name = [](uint32_t id) -> const char * {
+            switch (id) {
+            case 0x001D: return "Descriptor";
+            case 0x001E: return "Binding";
+            case 0x001F: return "AccessControl";
+            case 0x0028: return "BasicInformation";
+            case 0x002A: return "OtaSoftwareUpdate";
+            case 0x002B: return "LocalizationConfig";
+            case 0x002F: return "PowerSource";
+            case 0x0030: return "GeneralCommissioning";
+            case 0x0031: return "NetworkCommissioning";
+            case 0x0033: return "GeneralDiagnostics";
+            case 0x0034: return "SoftwareDiagnostics";
+            case 0x0035: return "ThreadDiagnostics";
+            case 0x0037: return "EthernetDiagnostics";
+            case 0x003C: return "AdminCommissioning";
+            case 0x003E: return "OperationalCredentials";
+            case 0x003F: return "GroupKeyManagement";
+            case 0x0040: return "FixedLabel";
+            case 0x0041: return "UserLabel";
+            case 0x0045: return "BooleanState";
+            case 0x0046: return "ICDManagement";
+            case 0x0003: return "Identify";
+            case 0x0004: return "Groups";
+            case 0x0005: return "Scenes";
+            case 0x0006: return "OnOff";
+            case 0x0008: return "LevelControl";
+            case 0x0101: return "DoorLock";
+            case 0x0102: return "WindowCovering";
+            case 0x0200: return "PumpConfigControl";
+            case 0x0201: return "Thermostat";
+            case 0x0204: return "ThermostatUI";
+            case 0x0300: return "ColorControl";
+            case 0x0400: return "IlluminanceMeasurement";
+            case 0x0402: return "TemperatureMeasurement";
+            case 0x0403: return "PressureMeasurement";
+            case 0x0405: return "RelativeHumidity";
+            case 0x0406: return "OccupancySensing";
+            default:     return nullptr;
+            }
+        };
+
+        // Attribute name lookup for frequently used attributes
+        auto attr_name = [](uint32_t cluster, uint32_t attr) -> const char * {
+            switch (cluster) {
+            case 0x001D: // Descriptor
+                switch (attr) {
+                case 0x0000: return "DeviceTypeList";
+                case 0x0001: return "ServerList";
+                case 0x0002: return "ClientList";
+                case 0x0003: return "PartsList";
+                default: return nullptr;
+                }
+            case 0x0006: // OnOff
+                switch (attr) {
+                case 0x0000: return "OnOff";
+                case 0x4000: return "GlobalSceneControl";
+                case 0x4001: return "OnTime";
+                case 0x4002: return "OffWaitTime";
+                case 0x4003: return "StartUpOnOff";
+                default: return nullptr;
+                }
+            case 0x0008: // LevelControl
+                switch (attr) {
+                case 0x0000: return "CurrentLevel";
+                case 0x0001: return "RemainingTime";
+                case 0x0002: return "MinLevel";
+                case 0x0003: return "MaxLevel";
+                case 0x0011: return "OnLevel";
+                case 0x4000: return "StartUpCurrentLevel";
+                default: return nullptr;
+                }
+            case 0x0028: // BasicInformation
+                switch (attr) {
+                case 0x0000: return "DataModelRevision";
+                case 0x0001: return "VendorName";
+                case 0x0002: return "VendorID";
+                case 0x0003: return "ProductName";
+                case 0x0004: return "ProductID";
+                case 0x0005: return "NodeLabel";
+                case 0x0006: return "Location";
+                case 0x0007: return "HardwareVersion";
+                case 0x0008: return "HardwareVersionString";
+                case 0x0009: return "SoftwareVersion";
+                case 0x000A: return "SoftwareVersionString";
+                case 0x000F: return "SerialNumber";
+                case 0x0012: return "UniqueID";
+                default: return nullptr;
+                }
+            case 0x002F: // PowerSource
+                switch (attr) {
+                case 0x0000: return "Status";
+                case 0x000B: return "BatVoltage";
+                case 0x000C: return "BatPercentRemaining";
+                case 0x000E: return "BatChargeLevel";
+                default: return nullptr;
+                }
+            case 0x0045: // BooleanState
+                switch (attr) {
+                case 0x0000: return "StateValue";
+                default: return nullptr;
+                }
+            case 0x0300: // ColorControl
+                switch (attr) {
+                case 0x0000: return "CurrentHue";
+                case 0x0001: return "CurrentSaturation";
+                case 0x0007: return "ColorTemperatureMireds";
+                case 0x0008: return "ColorMode";
+                case 0x400B: return "ColorTempPhysicalMin";
+                case 0x400C: return "ColorTempPhysicalMax";
+                default: return nullptr;
+                }
+            case 0x0402: // TemperatureMeasurement
+                switch (attr) {
+                case 0x0000: return "MeasuredValue";
+                case 0x0001: return "MinMeasuredValue";
+                case 0x0002: return "MaxMeasuredValue";
+                default: return nullptr;
+                }
+            default: return nullptr;
+            }
+        };
+
+        const char *cn = cluster_name(path.mClusterId);
+        const char *an = attr_name(path.mClusterId, path.mAttributeId);
+        char label[80];
+        snprintf(label, sizeof(label), "ep:%u %s%s0x%04" PRIX32 ".%s%s0x%04" PRIX32,
+                 path.mEndpointId,
+                 cn ? cn : "", cn ? "/" : "", path.mClusterId,
+                 an ? an : "", an ? "/" : "", path.mAttributeId);
+
+        chip::TLV::TLVReader peek;
+        peek.Init(*data);
+        chip::TLV::TLVType type = peek.GetType();
+        switch (type) {
+        case chip::TLV::kTLVType_Boolean: {
+            bool val;
+            if (peek.Get(val) == CHIP_NO_ERROR) {
+                ESP_LOGW(TAG, "  %s => %s", label, val ? "TRUE" : "FALSE");
+            }
+            break;
+        }
+        case chip::TLV::kTLVType_UnsignedInteger: {
+            uint64_t val;
+            if (peek.Get(val) == CHIP_NO_ERROR) {
+                ESP_LOGW(TAG, "  %s => %" PRIu64 " (0x%" PRIX64 ")", label, val, val);
+            }
+            break;
+        }
+        case chip::TLV::kTLVType_SignedInteger: {
+            int64_t val;
+            if (peek.Get(val) == CHIP_NO_ERROR) {
+                ESP_LOGW(TAG, "  %s => %" PRId64, label, val);
+            }
+            break;
+        }
+        case chip::TLV::kTLVType_UTF8String: {
+            char buf[128];
+            uint32_t len = sizeof(buf) - 1;
+            if (peek.GetString(buf, len) == CHIP_NO_ERROR) {
+                ESP_LOGW(TAG, "  %s => \"%s\"", label, buf);
+            }
+            break;
+        }
+        case chip::TLV::kTLVType_Array: {
+            chip::TLV::TLVType containerType;
+            if (peek.EnterContainer(containerType) == CHIP_NO_ERROR) {
+                char list_buf[512];
+                int off = 0;
+                while (peek.Next() == CHIP_NO_ERROR && off < (int)sizeof(list_buf) - 40) {
+                    uint64_t elem;
+                    if (peek.Get(elem) == CHIP_NO_ERROR) {
+                        // For ServerList/ClientList, resolve cluster names
+                        const char *ename = (path.mAttributeId == 0x0001 || path.mAttributeId == 0x0002)
+                                            ? cluster_name((uint32_t)elem) : nullptr;
+                        int written;
+                        if (ename) {
+                            written = snprintf(list_buf + off, sizeof(list_buf) - off,
+                                               "%s(0x%04" PRIX64 ") ", ename, elem);
+                        } else {
+                            written = snprintf(list_buf + off, sizeof(list_buf) - off,
+                                               "0x%04" PRIX64 " ", elem);
+                        }
+                        if (written > 0) off += written;
+                    }
+                }
+                list_buf[off] = '\0';
+                ESP_LOGW(TAG, "  %s => [%s]", label, list_buf);
+                peek.ExitContainer(containerType);
+            }
+            break;
+        }
+        default:
+            ESP_LOGW(TAG, "  %s => (TLV type %d)", label, static_cast<int>(type));
+            break;
+        }
+    }
+
     if (attribute_data_cb) {
         chip::TLV::TLVReader data_cpy;
         data_cpy.Init(*data);

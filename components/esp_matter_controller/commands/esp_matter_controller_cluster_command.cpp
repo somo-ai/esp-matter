@@ -164,7 +164,8 @@ void cluster_command::on_device_connection_failure_fcn(void *context, const Scop
 void cluster_command::default_success_fcn(void *ctx, const ConcreteCommandPath &command_path, const StatusIB &status,
                                           TLVReader *response_data)
 {
-    ESP_LOGI(TAG, "Send command success");
+    ESP_LOGW(TAG, "Command OK — ep:%u cluster:0x%04" PRIX32 " cmd:0x%04" PRIX32,
+             command_path.mEndpointId, command_path.mClusterId, command_path.mCommandId);
     ESP_LOGI(TAG,
              "Some commands of specific clusters will have a reponse which is not NullObject, so we need to handle the "
              "response data for those commands. Here we print the reponse data.");
@@ -194,7 +195,7 @@ void cluster_command::default_success_fcn(void *ctx, const ConcreteCommandPath &
 
 void cluster_command::default_error_fcn(void *ctx, CHIP_ERROR error)
 {
-    ESP_LOGI(TAG, "Send command failure: err :%" CHIP_ERROR_FORMAT, error.Format());
+    ESP_LOGE(TAG, "Command FAILED: %s (0x%08" PRIX32 ")", chip::ErrorStr(error), error.AsInteger());
 }
 
 esp_err_t cluster_command::dispatch_group_command(void *context)
