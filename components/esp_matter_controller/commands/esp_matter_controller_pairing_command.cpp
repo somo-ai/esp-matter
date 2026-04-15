@@ -98,14 +98,18 @@ void pairing_command::OnCommissioningStatusUpdate(chip::PeerId peerId, Commissio
 {
     m_stage_count++;
     int64_t elapsed_ms = (esp_timer_get_time() - m_commissioning_start_us) / 1000;
+    const char *stage_name = StageToString(stageCompleted);
     if (error == CHIP_NO_ERROR) {
         ESP_LOGW(TAG, "[%3u.%03us] Stage %2u complete: '%s'",
                  (unsigned)(elapsed_ms / 1000), (unsigned)(elapsed_ms % 1000),
-                 m_stage_count, StageToString(stageCompleted));
+                 m_stage_count, stage_name);
     } else {
         ESP_LOGE(TAG, "[%3u.%03us] Stage %2u FAILED: '%s' error: %s",
                  (unsigned)(elapsed_ms / 1000), (unsigned)(elapsed_ms % 1000),
-                 m_stage_count, StageToString(stageCompleted), ErrorStr(error));
+                 m_stage_count, stage_name, ErrorStr(error));
+    }
+    if (m_callbacks.commissioning_status_callback) {
+        m_callbacks.commissioning_status_callback(stageCompleted, stage_name, error);
     }
 }
 

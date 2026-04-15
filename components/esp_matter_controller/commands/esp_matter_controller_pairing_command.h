@@ -38,6 +38,11 @@ typedef struct {
     void (*commissioning_failure_callback)(
         ScopedNodeId peer_id, CHIP_ERROR error, chip::Controller::CommissioningStage stage,
         std::optional<chip::Credentials::AttestationVerificationResult> addtional_err_info);
+    // Callback for commissioning stage progress updates.
+    // Called after each commissioning stage completes (Thread setup, CASE, etc.).
+    // stage_name is the human-readable stage name from StageToString().
+    void (*commissioning_status_callback)(chip::Controller::CommissioningStage stage,
+                                          const char *stage_name, CHIP_ERROR error);
 } pairing_command_callbacks_t;
 
 /** Pairing command class to finish commissioning with Matter end-devices **/
@@ -195,7 +200,7 @@ private:
         : m_remote_node_id(0)
         , m_setup_pincode(0)
         , m_discriminator(0)
-        , m_callbacks{nullptr, nullptr, nullptr}
+        , m_callbacks{nullptr, nullptr, nullptr, nullptr}
         , m_icd_registration(true)
         , m_icd_registration_strategy(chip::Controller::ICDRegistrationStrategy::kBeforeComplete)
         , m_commissioning_start_us(0)
