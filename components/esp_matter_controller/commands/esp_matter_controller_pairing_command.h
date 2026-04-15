@@ -43,6 +43,10 @@ typedef struct {
     // stage_name is the human-readable stage name from StageToString().
     void (*commissioning_status_callback)(chip::Controller::CommissioningStage stage,
                                           const char *stage_name, CHIP_ERROR error);
+    // Callback when BLE discovery times out without finding the device.
+    // Fires when OnStatusUpdate(SecurePairingFailed) is received but
+    // OnPairingComplete was never called (no PASE session was attempted).
+    void (*ble_scan_failed_callback)(void);
 } pairing_command_callbacks_t;
 
 /** Pairing command class to finish commissioning with Matter end-devices **/
@@ -53,6 +57,7 @@ public:
     // This function will be called when the PASE session is established or the commisioner fails to establish
     // PASE session.
     void OnPairingComplete(CHIP_ERROR error) override;
+    void OnStatusUpdate(DevicePairingDelegate::Status status) override;
     // The two functions are invoked upon the completion of the commissioning process, either successfully or
     // failed.
     void OnCommissioningSuccess(chip::PeerId peerId) override;
@@ -195,16 +200,18 @@ private:
     bool m_device_is_icd;
     int64_t m_commissioning_start_us;
     uint8_t m_stage_count;
+    bool    m_pase_callback_fired;
 
     pairing_command()
         : m_remote_node_id(0)
         , m_setup_pincode(0)
         , m_discriminator(0)
-        , m_callbacks{nullptr, nullptr, nullptr, nullptr}
+        , m_callbacks{nullptr, nullptr, nullptr, nullptr, nullptr}
         , m_icd_registration(true)
         , m_icd_registration_strategy(chip::Controller::ICDRegistrationStrategy::kBeforeComplete)
         , m_commissioning_start_us(0)
         , m_stage_count(0)
+        , m_pase_callback_fired(false)
     {
         chip::Crypto::DRBG_get_bytes(m_icd_symmetric_key_buf, sizeof(m_icd_symmetric_key));
         m_icd_symmetric_key = chip::ByteSpan(m_icd_symmetric_key_buf);

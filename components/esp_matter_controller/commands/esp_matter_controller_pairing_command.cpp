@@ -33,6 +33,7 @@ namespace controller {
 
 void pairing_command::OnPairingComplete(CHIP_ERROR err)
 {
+    m_pase_callback_fired = true;
     int64_t elapsed_ms = (esp_timer_get_time() - m_commissioning_start_us) / 1000;
     if (err == CHIP_NO_ERROR) {
         ESP_LOGW(TAG, "[%3u.%03us] PASE session establishment success",
@@ -45,6 +46,22 @@ void pairing_command::OnPairingComplete(CHIP_ERROR err)
     }
     if (m_callbacks.pase_callback) {
         m_callbacks.pase_callback(err);
+    }
+}
+
+void pairing_command::OnStatusUpdate(DevicePairingDelegate::Status status)
+{
+    if (status == DevicePairingDelegate::SecurePairingFailed && !m_pase_callback_fired) {
+        // BLE scan timed out without finding the device — OnPairingComplete was
+        // never called because no PASE session was attempted.
+        int64_t elapsed_ms = (esp_timer_get_time() - m_commissioning_start_us) / 1000;
+        ESP_LOGE(TAG, "[%3u.%03us] BLE scan failed — device not found (no PASE attempted)",
+                 (unsigned)(elapsed_ms / 1000), (unsigned)(elapsed_ms % 1000));
+        auto &controller_instance = esp_matter::controller::matter_controller_client::get_instance();
+        controller_instance.get_commissioner()->RegisterPairingDelegate(nullptr);
+        if (m_callbacks.ble_scan_failed_callback) {
+            m_callbacks.ble_scan_failed_callback();
+        }
     }
 }
 
@@ -213,6 +230,7 @@ esp_err_t pairing_command::pairing_ble_thread(NodeId node_id, uint32_t pincode, 
 
     pairing_command::get_instance().m_commissioning_start_us = esp_timer_get_time();
     pairing_command::get_instance().m_stage_count = 0;
+    pairing_command::get_instance().m_pase_callback_fired = false;
 
     ESP_LOGW(TAG, "pairing_ble_thread: node=%" PRIu64 " pin=%" PRIu32 " disc=%u hasDisc=%d",
              node_id, pincode, disc, params.HasDiscriminator());
