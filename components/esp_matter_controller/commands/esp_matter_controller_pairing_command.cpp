@@ -283,6 +283,10 @@ esp_err_t pairing_command::pairing_code_thread(NodeId nodeId, const char *payloa
 {
     ByteSpan dataset_span(dataset_buf, dataset_len);
 
+    pairing_command::get_instance().m_commissioning_start_us = esp_timer_get_time();
+    pairing_command::get_instance().m_stage_count = 0;
+    pairing_command::get_instance().m_pase_callback_fired = false;
+
     CommissioningParameters commissioning_params = CommissioningParameters().SetThreadOperationalDataset(dataset_span);
     auto &controller_instance = esp_matter::controller::matter_controller_client::get_instance();
     ESP_RETURN_ON_FALSE(controller_instance.get_commissioner()->GetPairingDelegate() == nullptr, ESP_ERR_INVALID_STATE,
