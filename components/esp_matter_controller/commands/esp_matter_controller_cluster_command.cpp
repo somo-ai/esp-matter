@@ -157,8 +157,12 @@ void cluster_command::on_device_connected_fcn(void *context, ExchangeManager &ex
 void cluster_command::on_device_connection_failure_fcn(void *context, const ScopedNodeId &peerId, CHIP_ERROR error)
 {
     cluster_command *cmd = reinterpret_cast<cluster_command *>(context);
+    ESP_LOGE(TAG, "CASE session failed: node=0x%" PRIX64 " err=%s",
+             peerId.GetNodeId(), chip::ErrorStr(error));
+    if (cmd->on_error_cb) {
+        cmd->on_error_cb(nullptr, error);
+    }
     chip::Platform::Delete(cmd);
-    return;
 }
 
 void cluster_command::default_success_fcn(void *ctx, const ConcreteCommandPath &command_path, const StatusIB &status,

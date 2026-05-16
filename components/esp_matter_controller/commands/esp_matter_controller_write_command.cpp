@@ -56,8 +56,9 @@ void write_command::on_device_connected_fcn(void *context, ExchangeManager &exch
 void write_command::on_device_connection_failure_fcn(void *context, const ScopedNodeId &peerId, CHIP_ERROR error)
 {
     write_command *cmd = (write_command *)context;
+    ESP_LOGE(TAG, "Write: CASE session failed: node=0x%" PRIX64 " err=%s",
+             peerId.GetNodeId(), chip::ErrorStr(error));
     chip::Platform::Delete(cmd);
-    return;
 }
 
 esp_err_t write_command::send_command()

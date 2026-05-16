@@ -53,12 +53,13 @@ void subscribe_command::on_device_connected_fcn(void *context, ExchangeManager &
 void subscribe_command::on_device_connection_failure_fcn(void *context, const ScopedNodeId &peerId, CHIP_ERROR error)
 {
     subscribe_command *cmd = (subscribe_command *)context;
+    ESP_LOGE(TAG, "Subscribe: CASE session failed: node=0x%" PRIX64 " err=%s",
+             peerId.GetNodeId(), chip::ErrorStr(error));
 
     if (cmd->subscribe_failure_cb)
         cmd->subscribe_failure_cb((void *)cmd);
 
     chip::Platform::Delete(cmd);
-    return;
 }
 
 esp_err_t subscribe_command::send_command()

@@ -51,8 +51,9 @@ void read_command::on_device_connected_fcn(void *context, ExchangeManager &excha
 void read_command::on_device_connection_failure_fcn(void *context, const ScopedNodeId &peerId, CHIP_ERROR error)
 {
     read_command *cmd = (read_command *)context;
+    ESP_LOGE(TAG, "Read: CASE session failed: node=0x%" PRIX64 " err=%s",
+             peerId.GetNodeId(), chip::ErrorStr(error));
     chip::Platform::Delete(cmd);
-    return;
 }
 
 esp_err_t read_command::send_command()
