@@ -88,6 +88,24 @@ private:
     remove_fabric_callback m_remove_fabric_callback;
 };
 
+using icd_check_in_callback_t = void (*)(const chip::app::ICDClientInfo &client_info);
+
+class matter_controller_check_in_delegate : public chip::app::DefaultCheckInDelegate {
+public:
+    void set_callback(icd_check_in_callback_t callback) { m_callback = callback; }
+
+    void OnCheckInComplete(const chip::app::ICDClientInfo &client_info) override
+    {
+        chip::app::DefaultCheckInDelegate::OnCheckInComplete(client_info);
+        if (m_callback) {
+            m_callback(client_info);
+        }
+    }
+
+private:
+    icd_check_in_callback_t m_callback = nullptr;
+};
+
 class matter_controller_client {
 public:
     class controller_storage_delegate : public chip::PersistentStorageDelegate {
@@ -133,6 +151,10 @@ public:
 
     esp_err_t init(NodeId node_id, FabricId fabric_id, uint16_t listen_port);
     chip::app::DefaultICDClientStorage &get_icd_client_storage() { return m_icd_client_storage; }
+    void set_icd_check_in_callback(icd_check_in_callback_t callback)
+    {
+        m_icd_check_in_delegate.set_callback(callback);
+    }
 
 #ifdef CONFIG_ESP_MATTER_COMMISSIONER_ENABLE
     esp_err_t setup_commissioner();
@@ -227,7 +249,7 @@ private:
     NodeId m_controller_node_id;
     FabricId m_controller_fabric_id;
     chip::app::DefaultICDClientStorage m_icd_client_storage;
-    chip::app::DefaultCheckInDelegate m_icd_check_in_delegate;
+    matter_controller_check_in_delegate m_icd_check_in_delegate;
     chip::app::CheckInHandler m_check_in_handler;
 
 #ifdef CONFIG_ESP_MATTER_COMMISSIONER_ENABLE
