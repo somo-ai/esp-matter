@@ -148,8 +148,22 @@ void cluster_command::on_device_connected_fcn(void *context, ExchangeManager &ex
     chip::OperationalDeviceProxy device_proxy(&exchangeMgr, sessionHandle);
     chip::app::CommandPathParams command_path = {cmd->m_endpoint_id, 0, cmd->m_cluster_id, cmd->m_command_id,
                                                  chip::app::CommandPathFlags::kEndpointIdValid};
-    interaction::invoke::send_request(context, &device_proxy, command_path, cmd->m_command_data_field,
-                                      cmd->on_success_cb, cmd->on_error_cb, cmd->m_timed_invoke_timeout_ms);
+    esp_err_t err = interaction::invoke::send_request(context, &device_proxy, command_path, cmd->m_command_data_field,
+                                                      cmd->on_success_cb, cmd->on_error_cb,
+                                                      cmd->m_timed_invoke_timeout_ms);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Invoke dispatch failed: node=0x%" PRIX64 " err=%s",
+                 cmd->m_destination_id, esp_err_to_name(err));
+        if (cmd->on_error_cb) {
+            CHIP_ERROR chip_error = CHIP_ERROR_INTERNAL;
+            if (err == ESP_ERR_NO_MEM) {
+                chip_error = CHIP_ERROR_NO_MEMORY;
+            } else if (err == ESP_ERR_INVALID_ARG) {
+                chip_error = CHIP_ERROR_INVALID_ARGUMENT;
+            }
+            cmd->on_error_cb(context, chip_error);
+        }
+    }
     chip::Platform::Delete(cmd);
     return;
 }
